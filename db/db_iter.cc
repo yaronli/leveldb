@@ -95,6 +95,7 @@ class DBIter: public Iterator {
   }
 
   inline void ClearSavedValue() {
+    // NOTE(Yangguang Li): 针对string的优化，避免saved_value占用内存过大
     if (saved_value_.capacity() > 1048576) {
       std::string empty;
       swap(empty, saved_value_);
@@ -175,6 +176,10 @@ void DBIter::FindNextUserEntry(bool skipping, std::string* skip) {
   assert(iter_->Valid());
   assert(direction_ == kForward);
   do {
+    // NOTE(Yangguang Li): 如何保证kTypeDeletion和kTypeValue的record的顺序
+    // 参看db/db_format.h 中ValueType的定义
+    //   1. Key的形式为<userkey, sequence, value_type>
+    //   2. kTypeDeletion < kTypeValue，所以删除的标记在原始Value的标记之前
     ParsedInternalKey ikey;
     if (ParseKey(&ikey) && ikey.sequence <= sequence_) {
       switch (ikey.type) {

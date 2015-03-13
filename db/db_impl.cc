@@ -319,6 +319,8 @@ Status DBImpl::Recover(VersionEdit* edit) {
     if (!s.ok()) {
       return s;
     }
+    // NOTE(Yangguang Li): expected array is all of leveldb files in 
+    // leveldb directory.
     std::set<uint64_t> expected;
     versions_->AddLiveFiles(&expected);
     uint64_t number;

@@ -89,6 +89,8 @@ class Version {
   void Ref();
   void Unref();
 
+  // NOTE(Yangguang Li): 从指定的level的文件列表中获取与[begin, end]存在交集的
+  // ldb 文件列表
   void GetOverlappingInputs(
       int level,
       const InternalKey* begin,         // NULL means before all keys
