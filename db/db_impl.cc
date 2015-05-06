@@ -519,6 +519,12 @@ void DBImpl::CompactMemTable() {
 
   // Replace immutable memtable with the generated Table
   if (s.ok()) {
+    // NOTE(Yangguang Li): 将新增的level0 table加入到VersionSet
+    // 中, 这里使用了VersionSet + VersionEdit的方式修改，确保
+    // 每次修改都可追述，具体可参考VersionSet及VersionEdit的
+    // 实现.
+    // 另外这里设置了新的LogNumber，说明之前的LogFile已不需
+    // 要，因为MemTable已经Dump到磁盘上，保证了数据不可丢失
     edit.SetPrevLogNumber(0);
     edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
     s = versions_->LogAndApply(&edit, &mutex_);
@@ -1182,6 +1188,8 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
   Writer* last_writer = &w;
   if (status.ok() && my_batch != NULL) {  // NULL batch is for compactions
     WriteBatch* updates = BuildBatchGroup(&last_writer);
+    // NOTE(Yangguang Li): 这里last_sequence的更新非常重要,
+    // 所有的Write、Update、Delete都会将SequenceNumber 加1
     WriteBatchInternal::SetSequence(updates, last_sequence + 1);
     last_sequence += WriteBatchInternal::Count(updates);
 
@@ -1201,6 +1209,8 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
       }
       if (status.ok()) {
         status = WriteBatchInternal::InsertInto(updates, mem_);
+        // NOTE(Yangguang Li): 这时如果status.ok() == false, 代表什么
+        // 需要将log_writer的记录清除吗
       }
       mutex_.Lock();
       if (sync_error) {
@@ -1219,6 +1229,19 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
     Writer* ready = writers_.front();
     writers_.pop_front();
     if (ready != &w) {
+      // NOTE(Yangguang Li): 这个分支应该什么情况下会执行
+      //
+      // 1. 可以参看BuildBatchGroup(Writer** last_writer)的实现
+      // 该函数在构造WriteBatch时，会将pending状态其它WriteBatch
+      // 进行Merge, 最大的允许的字节大小为1MB，如果当前WriteBatch
+      // 小于128KB时，其最大允许的字节会少一些，避免增大
+      // 小数据的写的耗时
+      // 2. 所以在updates中就可能包含多个WriteBatch，当对updates
+      // 更新完毕后，需要更新其它pending的writers的状态，Remove
+      // 已经完成写的操作
+      // 3. 这个实现还是非常巧妙的，首先没有简单的使用Mutex
+      // 来保证互斥写，而是自己实现，然后对写进行Merge, 提
+      // 搞写的效率
       ready->status = status;
       ready->done = true;
       ready->cv.Signal();

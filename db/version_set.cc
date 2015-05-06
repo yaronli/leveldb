@@ -34,6 +34,11 @@ static const int64_t kExpandedCompactionByteSizeLimit = 25 * kTargetFileSize;
 static double MaxBytesForLevel(int level) {
   // Note: the result for level zero is not really used since we set
   // the level-0 compaction threshold based on number of files.
+  // NOTE(Yangguang Li): 1048576 = 1MB, that is means:
+  // level 1 files size: 10MB
+  // level 2 files size: 100MB
+  // level 3 files size: 1GB
+  // ...
   double result = 10 * 1048576.0;  // Result for both level-0 and level-1
   while (level > 1) {
     result *= 10;
@@ -1014,6 +1019,13 @@ void VersionSet::MarkFileNumberUsed(uint64_t number) {
   }
 }
 
+// NOTE(Yangguang Li): 计算该Version的每个level的compaction score,
+// 然后选择score最大的作为下一个compaction的level.
+// 这里有两点：
+// a. 对于level != 0来说，主要通过计算该level的文件总大小与
+// 设置值的比例来确定是否该进行compaction
+// b. 对于level == 0来说，通过number of files 去确定是否
+// 进行compaction.
 void VersionSet::Finalize(Version* v) {
   // Precomputed best level for next compaction
   int best_level = -1;

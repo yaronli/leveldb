@@ -176,10 +176,9 @@ void DBIter::FindNextUserEntry(bool skipping, std::string* skip) {
   assert(iter_->Valid());
   assert(direction_ == kForward);
   do {
-    // NOTE(Yangguang Li): 如何保证kTypeDeletion和kTypeValue的record的顺序
-    // 参看db/db_format.h 中ValueType的定义
-    //   1. Key的形式为<userkey, sequence, value_type>
-    //   2. kTypeDeletion < kTypeValue，所以删除的标记在原始Value的标记之前
+    // NOTE(Yangguang Li): 首先在sstable底层是以<user_key, Sequence+ValueType>为key,
+    // 其中首先按照user_key升序排列，然后按Sequence + ValueType降序排列
+    // 对于相同的user_key来说，Sequence越大，代表操作越新
     ParsedInternalKey ikey;
     if (ParseKey(&ikey) && ikey.sequence <= sequence_) {
       switch (ikey.type) {
@@ -280,6 +279,9 @@ void DBIter::Seek(const Slice& target) {
   direction_ = kForward;
   ClearSavedValue();
   saved_key_.clear();
+  // NOTE(Yangguang Li): Why use kValueTypeForSeek ?
+  // 因为key是在相同user_key的情况下按Sequence + ValueType逆序排列的
+  // key = user_key + (sequence << 8) | kValueTypeForSeek
   AppendInternalKey(
       &saved_key_, ParsedInternalKey(target, sequence_, kValueTypeForSeek));
   iter_->Seek(saved_key_);
